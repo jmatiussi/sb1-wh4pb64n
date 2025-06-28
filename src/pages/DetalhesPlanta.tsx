@@ -17,6 +17,7 @@ const DetalhesPlanta: React.FC = () => {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [showShareLink, setShowShareLink] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [generatingPDF, setGeneratingPDF] = useState(false);
 
   useEffect(() => {
     if (id) {
@@ -39,12 +40,20 @@ const DetalhesPlanta: React.FC = () => {
     setConfirmDelete(false);
   };
 
-  const handleGeneratePDF = () => {
+  const handleGeneratePDF = async () => {
     if (plant) {
-      const pdfBlob = generatePlantPDF(plant, config.logo);
-      const url = URL.createObjectURL(pdfBlob);
-      setPdfUrl(url);
-      setShowShareLink(true);
+      setGeneratingPDF(true);
+      try {
+        const pdfBlob = await generatePlantPDF(plant, config.logo);
+        const url = URL.createObjectURL(pdfBlob);
+        setPdfUrl(url);
+        setShowShareLink(true);
+      } catch (error) {
+        console.error('Erro ao gerar PDF:', error);
+        alert('Erro ao gerar PDF. Tente novamente.');
+      } finally {
+        setGeneratingPDF(false);
+      }
     }
   };
 
@@ -189,10 +198,11 @@ const DetalhesPlanta: React.FC = () => {
               <div className="mt-2 md:mt-0 flex gap-2">
                 <button 
                   onClick={handleGeneratePDF}
-                  className="btn-outline py-1 flex items-center"
+                  disabled={generatingPDF}
+                  className="btn-outline py-1 flex items-center disabled:opacity-50"
                 >
                   <FilePdf className="h-4 w-4 mr-1" />
-                  PDF
+                  {generatingPDF ? 'Gerando...' : 'PDF'}
                 </button>
                 <button 
                   onClick={() => navigate(`/editar/${plant.id}`)}

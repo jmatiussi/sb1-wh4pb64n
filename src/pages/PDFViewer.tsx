@@ -14,16 +14,24 @@ const PDFViewer: React.FC = () => {
   const [plantName, setPlantName] = useState<string>('');
 
   useEffect(() => {
-    if (id) {
-      const plant = getPlantById(id);
-      if (plant) {
-        const pdfBlob = generatePlantPDF(plant, config.logo);
-        const url = URL.createObjectURL(pdfBlob);
-        setPdfUrl(url);
-        setPlantName(plant.nomePopular);
+    const generatePDF = async () => {
+      if (id) {
+        const plant = getPlantById(id);
+        if (plant) {
+          try {
+            const pdfBlob = await generatePlantPDF(plant, config.logo);
+            const url = URL.createObjectURL(pdfBlob);
+            setPdfUrl(url);
+            setPlantName(plant.nomePopular);
+          } catch (error) {
+            console.error('Erro ao gerar PDF:', error);
+          }
+        }
+        setLoading(false);
       }
-      setLoading(false);
-    }
+    };
+
+    generatePDF();
 
     return () => {
       if (pdfUrl) {
@@ -105,4 +113,4 @@ const PDFViewer: React.FC = () => {
   );
 };
 
-export default PDFViewer
+export default PDFViewer;

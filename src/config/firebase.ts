@@ -19,7 +19,7 @@ const db = getFirestore(app);
 enableIndexedDbPersistence(db)
   .catch((err) => {
     if (err.code === 'failed-precondition') {
-      console.error('Múltiplas abas abertas, persistência pode operar apenas em uma aba por vez');
+      console.warn('Múltiplas abas abertas, persistência pode operar apenas em uma aba por vez');
     } else if (err.code === 'unimplemented') {
       console.error('O navegador atual não suporta todos os recursos necessários');
     }
