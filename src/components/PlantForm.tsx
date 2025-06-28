@@ -1,4 +1,4 @@
-import React, { useState, ChangeEvent } from 'react';
+import React, { useState, ChangeEvent, useEffect } from 'react';
 import { Plant } from '../types';
 import { useClassifications } from '../contexts/ClassificationContext';
 import { X, Save, Upload } from 'lucide-react';
@@ -7,11 +7,21 @@ interface PlantFormProps {
   initialData?: Partial<Plant>;
   onSubmit: (data: Omit<Plant, 'id' | 'dataCadastro'>) => void;
   buttonText: string;
+  resetForm?: boolean;
+  onResetComplete?: () => void;
 }
 
-const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, buttonText }) => {
+const PlantForm: React.FC<PlantFormProps> = ({ 
+  initialData = {}, 
+  onSubmit, 
+  buttonText, 
+  resetForm = false,
+  onResetComplete 
+}) => {
   const { classifications } = useClassifications();
-  const [formData, setFormData] = useState<Omit<Plant, 'id' | 'dataCadastro'>>({
+  
+  // Estado inicial do formulário
+  const getInitialFormData = () => ({
     nomePopular: initialData.nomePopular || '',
     familia: initialData.familia || '',
     especie: initialData.especie || '',
@@ -25,6 +35,50 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
     imagens: initialData.imagens || [],
     classificacao: initialData.classificacao || 'Medicinal'
   });
+
+  const getEmptyFormData = () => ({
+    nomePopular: '',
+    familia: '',
+    especie: '',
+    nomeCientifico: '',
+    numeroCanteiro: '',
+    utilizacao: '',
+    principioAtivo: '',
+    observacao: '',
+    formaCultivo: '',
+    formasUtilizacao: '',
+    imagens: [],
+    classificacao: 'Medicinal'
+  });
+
+  const [formData, setFormData] = useState<Omit<Plant, 'id' | 'dataCadastro'>>(getInitialFormData());
+
+  // Efeito para resetar o formulário quando solicitado
+  useEffect(() => {
+    if (resetForm) {
+      const emptyFormData = getEmptyFormData();
+      setFormData(emptyFormData);
+      
+      // Limpar também os campos de arquivo
+      setTimeout(() => {
+        const fileInputs = document.querySelectorAll('input[type="file"]');
+        fileInputs.forEach((input: any) => {
+          input.value = '';
+        });
+      }, 100);
+      
+      if (onResetComplete) {
+        onResetComplete();
+      }
+    }
+  }, [resetForm, onResetComplete]);
+
+  // Efeito para atualizar o formulário quando initialData mudar (para edição)
+  useEffect(() => {
+    if (!resetForm && Object.keys(initialData).length > 0) {
+      setFormData(getInitialFormData());
+    }
+  }, [initialData]);
 
   const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
@@ -46,6 +100,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
         reader.readAsDataURL(file);
       });
 
+      // Limpar o input após processar os arquivos
       e.target.value = '';
     }
   };
@@ -80,6 +135,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
             onChange={handleChange}
             required
             className="input-field"
+            placeholder="Ex: Camomila, Alecrim, Boldo"
           />
         </div>
 
@@ -111,6 +167,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
             onChange={handleChange}
             required
             className="input-field"
+            placeholder="Ex: Asteraceae, Lamiaceae"
           />
         </div>
 
@@ -124,6 +181,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
             onChange={handleChange}
             required
             className="input-field"
+            placeholder="Ex: officinalis, vulgaris"
           />
         </div>
 
@@ -137,6 +195,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
             onChange={handleChange}
             required
             className="input-field"
+            placeholder="Ex: Matricaria chamomilla"
           />
         </div>
 
@@ -150,6 +209,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
             onChange={handleChange}
             required
             className="input-field"
+            placeholder="Ex: 01, A1, Setor-B"
           />
         </div>
 
@@ -163,6 +223,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
             onChange={handleChange}
             required
             className="input-field"
+            placeholder="Ex: Flavonoides, Óleos essenciais"
           />
         </div>
       </div>
@@ -177,6 +238,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
           required
           rows={3}
           className="input-field"
+          placeholder="Descreva para que a planta é utilizada medicinalmente..."
         />
       </div>
 
@@ -190,6 +252,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
           required
           rows={3}
           className="input-field"
+          placeholder="Descreva como cultivar a planta (solo, clima, irrigação, etc.)..."
         />
       </div>
 
@@ -203,6 +266,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
           required
           rows={3}
           className="input-field"
+          placeholder="Descreva como a planta pode ser utilizada (chá, tintura, cataplasma, etc.)..."
         />
       </div>
 
@@ -215,6 +279,7 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
           onChange={handleChange}
           rows={3}
           className="input-field"
+          placeholder="Informações adicionais, contraindicações, cuidados especiais..."
         />
       </div>
 
@@ -232,26 +297,33 @@ const PlantForm: React.FC<PlantFormProps> = ({ initialData = {}, onSubmit, butto
           multiple
           className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100"
         />
+        <p className="mt-1 text-sm text-gray-500">
+          Selecione uma ou mais imagens da planta (formatos: JPG, PNG, GIF)
+        </p>
       </div>
 
       {formData.imagens.length > 0 && (
         <div className="mt-4 mb-6">
-          <p className="input-label mb-2">Imagens selecionadas:</p>
+          <p className="input-label mb-2">Imagens selecionadas ({formData.imagens.length}):</p>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {formData.imagens.map((imagem, index) => (
               <div key={index} className="relative group">
                 <img 
                   src={imagem} 
                   alt={`Imagem ${index + 1}`}
-                  className="w-full h-40 object-cover rounded-md"
+                  className="w-full h-40 object-cover rounded-md border border-gray-200"
                 />
                 <button
                   type="button"
                   onClick={() => removeImage(index)}
-                  className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                  className="absolute top-2 right-2 bg-red-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                  title="Remover imagem"
                 >
                   <X className="h-4 w-4" />
                 </button>
+                <div className="absolute bottom-2 left-2 bg-black/70 text-white px-2 py-1 rounded text-xs">
+                  {index + 1}
+                </div>
               </div>
             ))}
           </div>

@@ -28,15 +28,14 @@ const wrapText = (text: string, maxWidth: number): string[] => {
   return lines;
 };
 
-// Função para processar imagem e remover rotação EXIF
+// Função para processar imagem e garantir que seja carregada corretamente
 const processImageForPDF = (imageSrc: string): Promise<string> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     
     img.onload = () => {
       try {
-        // Criar canvas com as dimensões originais da imagem
         const canvas = document.createElement('canvas');
         const ctx = canvas.getContext('2d');
         
@@ -49,12 +48,11 @@ const processImageForPDF = (imageSrc: string): Promise<string> => {
         canvas.width = img.naturalWidth || img.width;
         canvas.height = img.naturalHeight || img.height;
         
-        // Desenhar a imagem no canvas sem nenhuma transformação
-        // Isso remove automaticamente qualquer rotação EXIF
+        // Desenhar a imagem no canvas
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         
-        // Converter para base64 mantendo a orientação visual original
-        const processedImageSrc = canvas.toDataURL('image/jpeg', 0.9);
+        // Converter para base64
+        const processedImageSrc = canvas.toDataURL('image/jpeg', 0.8);
         resolve(processedImageSrc);
         
       } catch (error) {
@@ -64,14 +62,15 @@ const processImageForPDF = (imageSrc: string): Promise<string> => {
     };
     
     img.onerror = () => {
-      resolve(imageSrc);
+      console.error('Erro ao carregar imagem:', imageSrc);
+      reject(new Error('Falha ao carregar imagem'));
     };
     
     img.src = imageSrc;
   });
 };
 
-export const generatePlantPDF = (plant: Plant, logo?: string): Blob => {
+export const generatePlantPDF = async (plant: Plant, logo?: string): Promise<Blob> => {
   const pdf = new jsPDF();
   let y = 20;
   
@@ -247,7 +246,7 @@ export const generatePlantPDF = (plant: Plant, logo?: string): Blob => {
     addSection('Observações', plant.observacao);
   }
   
-  // Seção de Imagens mantendo orientação original absoluta
+  // Seção de Imagens - processamento síncrono
   if (plant.imagens.length > 0) {
     if (y > 200) {
       pdf.addPage();
@@ -264,143 +263,131 @@ export const generatePlantPDF = (plant: Plant, logo?: string): Blob => {
     
     y += 15;
     
-    // Processar imagens de forma síncrona para manter orientação
-    const processImagesSequentially = async () => {
-      let currentX = 25;
-      let currentRowY = y;
-      const maxWidth = 75;
-      const maxHeight = 90;
-      const margin = 10;
-      const pageMargin = 190;
+    // Processar imagens sequencialmente
+    let currentX = 25;
+    let currentRowY = y;
+    const maxWidth = 75;
+    const maxHeight = 90;
+    const margin = 10;
+    const pageMargin = 190;
+    
+    for (let index = 0; index < plant.imagens.length; index++) {
+      const imageSrc = plant.imagens[index];
       
-      for (let index = 0; index < plant.imagens.length; index++) {
-        const imageSrc = plant.imagens[index];
+      try {
+        // Processar imagem de forma síncrona
+        const processedImageSrc = await processImageForPDF(imageSrc);
         
-        try {
-          // Processar imagem para remover rotação EXIF
-          const processedImageSrc = await processImageForPDF(imageSrc);
-          
-          // Criar imagem para obter dimensões corretas
-          const img = new Image();
-          img.src = processedImageSrc;
-          
-          // Aguardar carregamento
-          await new Promise<void>((resolve) => {
-            img.onload = () => resolve();
-            img.onerror = () => resolve();
-          });
-          
-          // Calcular dimensões mantendo proporção original
-          let imgWidth = maxWidth;
-          let imgHeight = maxHeight;
-          
-          if (img.naturalWidth && img.naturalHeight) {
-            const aspectRatio = img.naturalWidth / img.naturalHeight;
-            
-            if (aspectRatio > 1) {
-              // Paisagem
-              imgHeight = maxWidth / aspectRatio;
-              if (imgHeight > maxHeight) {
-                imgHeight = maxHeight;
-                imgWidth = maxHeight * aspectRatio;
-              }
-            } else {
-              // Retrato
-              imgWidth = maxHeight * aspectRatio;
-              if (imgWidth > maxWidth) {
-                imgWidth = maxWidth;
+        // Calcular dimensões mantendo proporção
+        let imgWidth = maxWidth;
+        let imgHeight = maxHeight;
+        
+        // Criar uma nova imagem para obter dimensões
+        const img = new Image();
+        img.src = processedImageSrc;
+        
+        // Aguardar carregamento da imagem
+        await new Promise<void>((resolve) => {
+          img.onload = () => {
+            if (img.naturalWidth && img.naturalHeight) {
+              const aspectRatio = img.naturalWidth / img.naturalHeight;
+              
+              if (aspectRatio > 1) {
+                // Paisagem
                 imgHeight = maxWidth / aspectRatio;
+                if (imgHeight > maxHeight) {
+                  imgHeight = maxHeight;
+                  imgWidth = maxHeight * aspectRatio;
+                }
+              } else {
+                // Retrato
+                imgWidth = maxHeight * aspectRatio;
+                if (imgWidth > maxWidth) {
+                  imgWidth = maxWidth;
+                  imgHeight = maxWidth / aspectRatio;
+                }
               }
             }
-          }
-          
-          // Verificar se cabe na linha atual
-          if (currentX + imgWidth > pageMargin) {
-            currentX = 25;
-            currentRowY = y + maxHeight + margin + 15;
-            y = currentRowY;
-          }
-          
-          // Verificar se precisa de nova página
-          if (currentRowY + imgHeight > 270) {
-            pdf.addPage();
-            currentRowY = addHeader();
-            y = currentRowY;
-            currentX = 25;
-          }
-          
-          // Adicionar imagem processada (sem rotação EXIF)
-          pdf.addImage(
-            processedImageSrc,
-            'JPEG',
-            currentX,
-            currentRowY,
-            imgWidth,
-            imgHeight,
-            undefined,
-            'NONE' // Sem compressão adicional que possa alterar orientação
-          );
-          
-          // Legenda
-          pdf.setFontSize(8);
-          pdf.setFont(undefined, 'italic');
-          pdf.setTextColor(100, 100, 100);
-          const legendText = `Imagem ${index + 1}`;
-          const legendLines = wrapText(legendText, 20);
-          let legendY = currentRowY + imgHeight + 5;
-          
-          legendLines.forEach(line => {
-            pdf.text(line, currentX + (imgWidth/2), legendY, { align: 'center' });
-            legendY += 5;
-          });
-          
-          currentX += imgWidth + margin;
-          
-          // Atualizar y para a próxima seção
-          if (currentRowY + imgHeight + 15 > y) {
-            y = currentRowY + imgHeight + 15;
-          }
-          
-        } catch (error) {
-          console.error(`Erro ao processar imagem ${index + 1}:`, error);
-          
-          // Placeholder em caso de erro
-          const placeholderWidth = maxWidth;
-          const placeholderHeight = maxHeight;
-          
-          if (currentX + placeholderWidth > pageMargin) {
-            currentX = 25;
-            currentRowY = y + maxHeight + margin + 15;
-            y = currentRowY;
-          }
-          
-          if (currentRowY + placeholderHeight > 270) {
-            pdf.addPage();
-            currentRowY = addHeader();
-            y = currentRowY;
-            currentX = 25;
-          }
-          
-          pdf.setFillColor(240, 240, 240);
-          pdf.rect(currentX, currentRowY, placeholderWidth, placeholderHeight, 'F');
-          
-          pdf.setFontSize(10);
-          pdf.setTextColor(150, 150, 150);
-          pdf.text('Imagem não disponível', currentX + (placeholderWidth/2), currentRowY + (placeholderHeight/2), { align: 'center' });
-          
-          currentX += placeholderWidth + margin;
-          
-          if (currentRowY + placeholderHeight + 15 > y) {
-            y = currentRowY + placeholderHeight + 15;
-          }
+            resolve();
+          };
+          img.onerror = () => resolve();
+        });
+        
+        // Verificar se cabe na linha atual
+        if (currentX + imgWidth > pageMargin) {
+          currentX = 25;
+          currentRowY = y + maxHeight + margin + 15;
+          y = currentRowY;
+        }
+        
+        // Verificar se precisa de nova página
+        if (currentRowY + imgHeight > 270) {
+          pdf.addPage();
+          currentRowY = addHeader();
+          y = currentRowY;
+          currentX = 25;
+        }
+        
+        // Adicionar imagem ao PDF
+        pdf.addImage(
+          processedImageSrc,
+          'JPEG',
+          currentX,
+          currentRowY,
+          imgWidth,
+          imgHeight,
+          undefined,
+          'FAST'
+        );
+        
+        // Legenda
+        pdf.setFontSize(8);
+        pdf.setFont(undefined, 'italic');
+        pdf.setTextColor(100, 100, 100);
+        const legendText = `Imagem ${index + 1}`;
+        pdf.text(legendText, currentX + (imgWidth/2), currentRowY + imgHeight + 5, { align: 'center' });
+        
+        currentX += imgWidth + margin;
+        
+        // Atualizar y para a próxima seção
+        if (currentRowY + imgHeight + 15 > y) {
+          y = currentRowY + imgHeight + 15;
+        }
+        
+      } catch (error) {
+        console.error(`Erro ao processar imagem ${index + 1}:`, error);
+        
+        // Placeholder em caso de erro
+        const placeholderWidth = maxWidth;
+        const placeholderHeight = maxHeight;
+        
+        if (currentX + placeholderWidth > pageMargin) {
+          currentX = 25;
+          currentRowY = y + maxHeight + margin + 15;
+          y = currentRowY;
+        }
+        
+        if (currentRowY + placeholderHeight > 270) {
+          pdf.addPage();
+          currentRowY = addHeader();
+          y = currentRowY;
+          currentX = 25;
+        }
+        
+        pdf.setFillColor(240, 240, 240);
+        pdf.rect(currentX, currentRowY, placeholderWidth, placeholderHeight, 'F');
+        
+        pdf.setFontSize(10);
+        pdf.setTextColor(150, 150, 150);
+        pdf.text('Imagem não disponível', currentX + (placeholderWidth/2), currentRowY + (placeholderHeight/2), { align: 'center' });
+        
+        currentX += placeholderWidth + margin;
+        
+        if (currentRowY + placeholderHeight + 15 > y) {
+          y = currentRowY + placeholderHeight + 15;
         }
       }
-    };
-    
-    // Executar processamento das imagens
-    processImagesSequentially().catch(error => {
-      console.error('Erro no processamento sequencial das imagens:', error);
-    });
+    }
     
     y += 10;
   }
@@ -425,7 +412,7 @@ export const generatePlantPDF = (plant: Plant, logo?: string): Blob => {
   return pdf.output('blob');
 };
 
-export const generateCatalog = (plants: Plant[], classification: string = 'all', logo?: string): Blob => {
+export const generateCatalog = async (plants: Plant[], classification: string = 'all', logo?: string): Promise<Blob> => {
   const pdf = new jsPDF();
   
   // Capa
@@ -556,13 +543,15 @@ export const generateCatalog = (plants: Plant[], classification: string = 'all',
   });
   
   // Conteúdo das plantas
-  sortedPlants.forEach((plant, index) => {
+  for (let plantIndex = 0; plantIndex < sortedPlants.length; plantIndex++) {
+    const plant = sortedPlants[plantIndex];
+    
     pdf.addPage();
     currentPage++;
     y = addHeader();
     
     // Título da planta com fundo verde claro
-    const titleHeight = Math.max(50, (wrapText(`${index + 1}. ${plant.nomePopular}`, 45).length + wrapText(plant.nomeCientifico, 50).length) * 8 + 20);
+    const titleHeight = Math.max(50, (wrapText(`${plantIndex + 1}. ${plant.nomePopular}`, 45).length + wrapText(plant.nomeCientifico, 50).length) * 8 + 20);
     pdf.setFillColor(220, 240, 230);
     pdf.rect(20, y - 5, 170, titleHeight, 'F');
     
@@ -570,7 +559,7 @@ export const generateCatalog = (plants: Plant[], classification: string = 'all',
     pdf.setFontSize(18);
     pdf.setFont(undefined, 'bold');
     pdf.setTextColor(32, 106, 79);
-    const nameLines = wrapText(`${index + 1}. ${plant.nomePopular}`, 45);
+    const nameLines = wrapText(`${plantIndex + 1}. ${plant.nomePopular}`, 45);
     let nameY = y + 5;
     nameLines.forEach((line) => {
       pdf.text(line, 25, nameY);
@@ -690,7 +679,7 @@ export const generateCatalog = (plants: Plant[], classification: string = 'all',
       addTextSection('Observações', plant.observacao);
     }
     
-    // Adicionar imagem com moldura mantendo proporção e orientação original
+    // Adicionar imagem com moldura mantendo proporção
     if (plant.imagens.length > 0) {
       try {
         if (y > 220) {
@@ -699,19 +688,21 @@ export const generateCatalog = (plants: Plant[], classification: string = 'all',
           y = addHeader();
         }
         
-        // Processar imagem para remover rotação EXIF
-        processImageForPDF(plant.imagens[0]).then(processedImageSrc => {
-          // Moldura
-          pdf.setFillColor(240, 240, 240);
-          pdf.rect(20, y - 5, 90, 70, 'F');
-          
-          // Calcular dimensões mantendo proporção e orientação original
-          let imgWidth = 80;
-          let imgHeight = 60;
-          
-          const img = new Image();
-          img.src = processedImageSrc;
-          
+        // Processar imagem
+        const processedImageSrc = await processImageForPDF(plant.imagens[0]);
+        
+        // Moldura
+        pdf.setFillColor(240, 240, 240);
+        pdf.rect(20, y - 5, 90, 70, 'F');
+        
+        // Calcular dimensões mantendo proporção
+        let imgWidth = 80;
+        let imgHeight = 60;
+        
+        const img = new Image();
+        img.src = processedImageSrc;
+        
+        await new Promise<void>((resolve) => {
           img.onload = () => {
             if (img.naturalWidth && img.naturalHeight) {
               const aspectRatio = img.naturalWidth / img.naturalHeight;
@@ -732,38 +723,28 @@ export const generateCatalog = (plants: Plant[], classification: string = 'all',
                 }
               }
             }
-            
-            // Centralizar imagem na moldura
-            const imgX = 25 + (80 - imgWidth) / 2;
-            const imgY = y + (60 - imgHeight) / 2;
-            
-            // Adicionar imagem processada (sem rotação EXIF)
-            pdf.addImage(
-              processedImageSrc,
-              'JPEG',
-              imgX,
-              imgY,
-              imgWidth,
-              imgHeight,
-              undefined,
-              'NONE' // Preserva orientação original
-            );
-            
-            // Legenda
-            pdf.setFontSize(10);
-            pdf.setFont(undefined, 'italic');
-            pdf.setTextColor(100, 100, 100);
-            pdf.text('Imagem ilustrativa', 65, y + 65, { align: 'center' });
+            resolve();
           };
-        }).catch(error => {
-          console.error(`Erro ao processar imagem para ${plant.nomePopular}:`, error);
+          img.onerror = () => resolve();
         });
+        
+        // Centralizar imagem na moldura
+        const imgX = 25 + (80 - imgWidth) / 2;
+        const imgY = y + (60 - imgHeight) / 2;
+        
+        pdf.addImage(processedImageSrc, 'JPEG', imgX, imgY, imgWidth, imgHeight, undefined, 'FAST');
+        
+        // Legenda
+        pdf.setFontSize(10);
+        pdf.setFont(undefined, 'italic');
+        pdf.setTextColor(100, 100, 100);
+        pdf.text('Imagem ilustrativa', 65, y + 65, { align: 'center' });
         
       } catch (error) {
         console.error(`Erro ao adicionar imagem para ${plant.nomePopular}:`, error);
       }
     }
-  });
+  }
   
   // Rodapé em todas as páginas
   const pageCount = pdf.getNumberOfPages();

@@ -15,25 +15,34 @@ const Home: React.FC = () => {
   const { config } = useConfig();
   const [selectedClassification, setSelectedClassification] = useState<string>('all');
   const [showSettings, setShowSettings] = useState(false);
+  const [generatingCatalog, setGeneratingCatalog] = useState(false);
 
   const filteredPlants = selectedClassification === 'all' 
     ? plants 
     : plants.filter(plant => plant.classificacao === selectedClassification);
 
-  const handleGenerateCatalog = () => {
-    const plantsToInclude = selectedClassification === 'all' 
-      ? plants 
-      : plants.filter(plant => plant.classificacao === selectedClassification);
-    
-    const pdfBlob = generateCatalog(plantsToInclude, selectedClassification, config.logo);
-    const url = URL.createObjectURL(pdfBlob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `catalogo-plantas-${selectedClassification.toLowerCase()}.pdf`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+  const handleGenerateCatalog = async () => {
+    setGeneratingCatalog(true);
+    try {
+      const plantsToInclude = selectedClassification === 'all' 
+        ? plants 
+        : plants.filter(plant => plant.classificacao === selectedClassification);
+      
+      const pdfBlob = await generateCatalog(plantsToInclude, selectedClassification, config.logo);
+      const url = URL.createObjectURL(pdfBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `catalogo-plantas-${selectedClassification.toLowerCase()}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Erro ao gerar catálogo:', error);
+      alert('Erro ao gerar catálogo. Tente novamente.');
+    } finally {
+      setGeneratingCatalog(false);
+    }
   };
 
   // Combinar classificações padrão com classificações personalizadas
@@ -118,10 +127,11 @@ const Home: React.FC = () => {
         {filteredPlants.length > 0 && (
           <button
             onClick={handleGenerateCatalog}
-            className="btn-secondary flex items-center"
+            disabled={generatingCatalog}
+            className="btn-secondary flex items-center disabled:opacity-50"
           >
             <FileText className="h-5 w-5 mr-1" />
-            {getCatalogButtonText()}
+            {generatingCatalog ? 'Gerando...' : getCatalogButtonText()}
           </button>
         )}
       </div>
